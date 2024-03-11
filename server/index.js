@@ -1,30 +1,42 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const pdf = require('html-pdf');
-const cors = require('cors');
+const app = require("express")();
 
-const pdfTemplate = require('./documents');
+let chrome = {};
+let puppeteer;
 
-const app = express();
+if (process.env.AWS_LAMBDA_FUNCTION_VERSION) {
+  chrome = require("chrome-aws-lambda");
+  puppeteer = require("puppeteer-core");
+} else {
+  puppeteer = require("puppeteer");
+}
 
-const port = process.env.PORT || 5000;
+app.get("/api", async (req, res) => {
+  let options = {};
 
-app.use(cors());
-app.use(bodyParser.urlencoded({extended: true}));
-app.use(bodyParser.json());
+  if (process.env.AWS_LAMBDA_FUNCTION_VERSION) {
+    options = {
+      args: [...chrome.args, "--hide-scrollbars", "--disable-web-security"],
+      defaultViewport: chrome.defaultViewport,
+      executablePath: await chrome.executablePath,
+      headless: true,
+      ignoreHTTPSErrors: true,
+    };
+  }
 
-app.post('/create-pdf', (req, res) => {
-    pdf.create(pdfTemplate(req.body), {}).toFile('result.pdf', (err) => {
-        if(err) {
-            res.send(Promise.reject());
-        }
+  try {
+    let browser = await puppeteer.launch(options);
 
-        res.send(Promise.resolve());
-    });
+    let page = await browser.newPage();
+    await page.goto("https://www.google.com");
+    res.send(await page.title());
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
 });
 
-app.get('/fetch-pdf', (req, res) => {
-    res.sendFile(`${__dirname}/result.pdf`)
-})
+app.listen(process.env.PORT || 5000, () => {
+  console.log("Server started 5000");
+});
 
-app.listen(port, () => console.log(`Listening on port ${port}`));
+module.exports = app;
